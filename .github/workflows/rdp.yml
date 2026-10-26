@@ -1,11 +1,7 @@
-name: Windows RDP Runner (Ngrok)
+name: Windows RDP Runner (Chrome & Firefox - Pinggy)
 
 on:
   workflow_dispatch:
-    inputs:
-      ngrok_auth_token:
-        description: 'Ngrok Auth Token (from ngrok.com)'
-        required: true
 
 jobs:
   windows-rdp:
@@ -38,35 +34,31 @@ jobs:
           winget install --id Mozilla.Firefox -e --silent --accept-package-agreements --accept-source-agreements
           exit 0
 
-      - name: Install & Configure Ngrok
+      - name: Setup SSH Key
         shell: pwsh
         run: |
-          Write-Host "Installing Ngrok via Microsoft Store WinGet..."
-          winget install ngrok -s msstore --accept-source-agreements --accept-package-agreements --silent
-          
-          # Refresh environment path
-          $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-          
-          Write-Host "Configuring Ngrok Auth Token..."
-          ngrok config add-authtoken ${{ github.event.inputs.ngrok_auth_token }}
+          $sshDir = "$HOME\.ssh"
+          if (!(Test-Path $sshDir)) {
+              New-Item -ItemType Directory -Force -Path $sshDir | Out-Null
+          }
+          if (!(Test-Path "$sshDir\id_rsa")) {
+              ssh-keygen -t rsa -b 2048 -N '""' -f "$sshDir\id_rsa"
+          }
 
-      - name: Start Ngrok TCP Tunnel (Port 3389)
+      - name: Start Free Pinggy TCP Tunnel (Port 3389)
         shell: pwsh
         run: |
-          Write-Host "Starting Ngrok TCP tunnel..."
-          Start-Process ngrok -ArgumentList "tcp 3389" -NoNewWindow
+          Write-Host "Starting free Pinggy TCP tunnel..."
+          Start-Process ssh -ArgumentList "-p 443 -o StrictHostKeyChecking=no -R0:127.0.0.1:3389 tcp@free.pinggy.io" -RedirectStandardOutput "pinggy.log" -RedirectStandardError "pinggy_err.log" -NoNewWindow
           
-          # Wait for tunnel to spin up and fetch endpoint from local API
-          Start-Sleep -Seconds 7
-          try {
-              $Response = Invoke-RestMethod -Uri "http://localhost:4040/api/tunnels"
-              $RDP_URL = $Response.tunnels[0].public_url
+          Start-Sleep -Seconds 8
+          
+          if (Test-Path "pinggy.log") {
+              $logContent = Get-Content "pinggy.log" -Raw
               Write-Host "=================================================="
-              Write-Host " NGROK RDP ENDPOINT: $RDP_URL"
+              Write-Host " PINGGY TUNNEL OUTPUT:"
+              Write-Host $logContent
               Write-Host "=================================================="
-              echo "::notice ::RDP Endpoint: $RDP_URL"
-          } catch {
-              Write-Host "Could not fetch tunnel endpoint automatically from local API."
           }
 
       - name: Keep Runner Alive
