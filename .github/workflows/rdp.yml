@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       ngrok_auth_token:
-        description: 'Ngrok Auth Token'
+        description: '3LDizPBGky3R27clZNlzjPvuGFa_712fxAEdhSUDSCkGEhjcf'
         required: true
 
 jobs:
