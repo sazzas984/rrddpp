@@ -1,48 +1,61 @@
-name: Windows RDP Runner
+name: Windows RDP Runner (Chrome & Firefox)
 
 on:
   workflow_dispatch:
     inputs:
       ngrok_auth_token:
-        description: '3LDizPBGky3R27clZNlzjPvuGFa_712fxAEdhSUDSCkGEhjcf'
+        description: 'Ngrok Auth Token (from ngrok.com)'
         required: true
 
 jobs:
-  build:
+  windows-rdp:
     runs-on: windows-latest
     timeout-minutes: 360
 
     steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
       - name: Enable Remote Desktop (RDP)
         run: |
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
 
-      - name: Set RDP Credentials
+      - name: Set RDP Administrator Credentials
         run: |
           $Password = ConvertTo-SecureString "GitHubRDP@2026!" -AsPlainText -Force
           New-LocalUser -Name "runneradmin" -Password $Password -FullName "Admin" -Description "RDP Admin" -ErrorAction SilentlyContinue
           Add-LocalGroupMember -Group "Administrators" -Member "runneradmin" -ErrorAction SilentlyContinue
 
-      - name: Install & Configure Ngrok
+      - name: Install Google Chrome & Mozilla Firefox
+        run: |
+          Write-Host "Installing Google Chrome..."
+          winget install --id Google.Chrome -e --silent --accept-package-agreements --accept-source-agreements
+          
+          Write-Host "Installing Mozilla Firefox..."
+          winget install --id Mozilla.Firefox -e --silent --accept-package-agreements --accept-source-agreements
+
+      - name: Install & Configure Ngrok Tunnel
         run: |
           Invoke-WebRequest -Uri https://bin.equinox.io/c/bNyA1xQZYv/ngrok-v3-stable-windows-amd64.zip -OutFile ngrok.zip
           Expand-Archive ngrok.zip -DestinationPath .
           .\ngrok.exe config add-authtoken ${{ github.event.inputs.ngrok_auth_token }}
 
-      - name: Start Ngrok RDP Tunnel
+      - name: Start Ngrok TCP Tunnel for RDP (Port 3389)
         run: |
           Start-Process .\ngrok.exe -ArgumentList "tcp 3389" -NoNewWindow
-          Start-Sleep -Seconds 5
+          Start-Sleep -Seconds 6
           $Response = Invoke-RestMethod -Uri "http://localhost:4040/api/tunnels"
           $RDP_URL = $Response.tunnels[0].public_url
-          Write-Host "=========================================="
-          Write-Host "  WINDOWS RDP READY"
-          Write-Host "  Address: $RDP_URL"
-          Write-Host "  Username: runneradmin"
-          Write-Host "  Password: GitHubRDP@2026!"
-          Write-Host "=========================================="
+          
+          Write-Host "=================================================="
+          Write-Host " WINDOWS RDP DESKTOP READY!"
+          Write-Host " Address  : $RDP_URL"
+          Write-Host " Username : runneradmin"
+          Write-Host " Password : GitHubRDP@2026!"
+          Write-Host "=================================================="
+          echo "::notice ::RDP Endpoint: $RDP_URL"
 
       - name: Keep Runner Alive
         run: |
