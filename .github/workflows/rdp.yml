@@ -41,8 +41,8 @@ jobs:
       - name: Install & Configure Ngrok Tunnel
         shell: pwsh
         run: |
-          Write-Host "Installing Ngrok via winget..."
-          winget install --id ngrok.ngrok -e --silent --accept-package-agreements --accept-source-agreements
+          Write-Host "Installing Ngrok via Microsoft Store WinGet..."
+          winget install ngrok -s msstore --accept-source-agreements --accept-package-agreements --silent
           
           # Refresh environment path so the ngrok command works immediately
           $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
