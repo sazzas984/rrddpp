@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       ngrok_auth_token:
-        description: '3LDizPBGky3R27clZNlzjPvuGFa_712fxAEdhSUDSCkGEhjcf'
+        description: 'Ngrok Auth Token (from ngrok.com)'
         required: true
 
 jobs:
@@ -32,25 +32,28 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'SilentlyContinue'
-          
           Write-Host "Checking/Installing Google Chrome..."
           winget install --id Google.Chrome -e --silent --accept-package-agreements --accept-source-agreements
-          
           Write-Host "Checking/Installing Mozilla Firefox..."
           winget install --id Mozilla.Firefox -e --silent --accept-package-agreements --accept-source-agreements
-          
-          # Ensure step always exits successfully even if packages are already present
           exit 0
 
       - name: Install & Configure Ngrok Tunnel
+        shell: pwsh
         run: |
-          Invoke-WebRequest -Uri https://bin.equinox.io/c/bNyA1xQZYv/ngrok-v3-stable-windows-amd64.zip -OutFile ngrok.zip
-          Expand-Archive ngrok.zip -DestinationPath .
-          .\ngrok.exe config add-authtoken ${{ github.event.inputs.ngrok_auth_token }}
+          Write-Host "Installing Ngrok via winget..."
+          winget install --id ngrok.ngrok -e --silent --accept-package-agreements --accept-source-agreements
+          
+          # Refresh environment path so the ngrok command works immediately
+          $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+          
+          Write-Host "Configuring Ngrok Auth Token..."
+          ngrok config add-authtoken ${{ github.event.inputs.ngrok_auth_token }}
 
       - name: Start Ngrok TCP Tunnel for RDP (Port 3389)
+        shell: pwsh
         run: |
-          Start-Process .\ngrok.exe -ArgumentList "tcp 3389" -NoNewWindow
+          Start-Process ngrok -ArgumentList "tcp 3389" -NoNewWindow
           Start-Sleep -Seconds 6
           $Response = Invoke-RestMethod -Uri "http://localhost:4040/api/tunnels"
           $RDP_URL = $Response.tunnels[0].public_url
@@ -64,6 +67,7 @@ jobs:
           echo "::notice ::RDP Endpoint: $RDP_URL"
 
       - name: Keep Runner Alive
+        shell: pwsh
         run: |
           $i = 0
           while ($i -lt 360) {
