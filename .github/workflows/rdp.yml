@@ -1,7 +1,11 @@
-name: Windows RDP Runner (Chrome & Firefox - Serveo)
+name: Windows RDP Runner (Ngrok)
 
 on:
   workflow_dispatch:
+    inputs:
+      ngrok_auth_token:
+        description: 'Ngrok Auth Token (from ngrok.com)'
+        required: true
 
 jobs:
   windows-rdp:
@@ -34,41 +38,36 @@ jobs:
           winget install --id Mozilla.Firefox -e --silent --accept-package-agreements --accept-source-agreements
           exit 0
 
-      - name: Start Free Serveo TCP Tunnel (Port 3389)
+      - name: Install & Configure Ngrok
         shell: pwsh
         run: |
-          Write-Host "Starting Serveo TCP tunnel on port 443..."
+          Write-Host "Installing Ngrok via Microsoft Store WinGet..."
+          winget install ngrok -s msstore --accept-source-agreements --accept-package-agreements --silent
           
-          $psi = [System.Diagnostics.ProcessStartInfo]::new()
-          $psi.FileName = "ssh"
-          $psi.Arguments = "-p 443 -o StrictHostKeyChecking=no -R 0:localhost:3389 serveo.net"
-          $psi.RedirectStandardOutput = $true
-          $psi.RedirectStandardError = $true
-          $psi.UseShellExecute = $false
+          # Refresh environment path
+          $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
           
-          $p = [System.Diagnostics.Process]::Start($psi)
+          Write-Host "Configuring Ngrok Auth Token..."
+          ngrok config add-authtoken ${{ github.event.inputs.ngrok_auth_token }}
+
+      - name: Start Ngrok TCP Tunnel (Port 3389)
+        shell: pwsh
+        run: |
+          Write-Host "Starting Ngrok TCP tunnel..."
+          Start-Process ngrok -ArgumentList "tcp 3389" -NoNewWindow
           
-          # Stream logs for 8 seconds so the assigned port prints directly to the console
-          $sw = [Diagnostics.Stopwatch]::StartNew()
-          while ($sw.ElapsedMilliseconds -lt 8000) {
-              if (!$p.StandardError.EndOfStream) {
-                  $line = $p.StandardError.ReadLine()
-                  Write-Host "TUNNEL OUTPUT: $line"
-              }
-              if (!$p.StandardOutput.EndOfStream) {
-                  $line = $p.StandardOutput.ReadLine()
-                  Write-Host "TUNNEL OUTPUT: $line"
-              }
-              Start-Sleep -Milliseconds 100
+          # Wait for tunnel to spin up and fetch endpoint from local API
+          Start-Sleep -Seconds 7
+          try {
+              $Response = Invoke-RestMethod -Uri "http://localhost:4040/api/tunnels"
+              $RDP_URL = $Response.tunnels[0].public_url
+              Write-Host "=================================================="
+              Write-Host " NGROK RDP ENDPOINT: $RDP_URL"
+              Write-Host "=================================================="
+              echo "::notice ::RDP Endpoint: $RDP_URL"
+          } catch {
+              Write-Host "Could not fetch tunnel endpoint automatically from local API."
           }
-          
-          Write-Host "=================================================="
-          Write-Host " WINDOWS RDP DESKTOP READY!"
-          Write-Host " Look above for: Forwarding TCP connections from serveo.net:XXXXX"
-          Write-Host " Your Host  : serveo.net (using the port number XXXXX shown above)"
-          Write-Host " Username   : runneradmin"
-          Write-Host " Password   : GitHubRDP@2026!"
-          Write-Host "=================================================="
 
       - name: Keep Runner Alive
         shell: pwsh
