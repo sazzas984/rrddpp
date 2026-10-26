@@ -1,105 +1,54 @@
-name: Remote Desktop Runner
+name: Windows RDP Runner
 
 on:
   workflow_dispatch:
     inputs:
-      session_id:
-        description: 'Session Identifier from Web Application'
-        required: false
-        default: 'session-001'
-      connection_type:
-        description: 'Connection Method (novnc / ngrok-rdp / tmate)'
-        required: false
-        default: 'novnc'
+      ngrok_auth_token:
+        description: 'Ngrok Auth Token'
+        required: true
 
 jobs:
-  launch-rdp:
-    runs-on: ubuntu-latest
-    timeout-minutes: 360 # Maximum GitHub runner execution limit (6 hours)
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 360
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Setup Environment Variables
+      - name: Enable Remote Desktop (RDP)
         run: |
-          echo "SESSION_ID=${{ github.event.inputs.session_id }}" >> $GITHUB_ENV
-          echo "CONN_TYPE=${{ github.event.inputs.connection_type }}" >> $GITHUB_ENV
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
 
-      # Option A: Linux GUI Desktop + VNC + noVNC Web Screen Share
-      - name: Install Desktop Environment & noVNC
+      - name: Set RDP Credentials
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y \
-            xfce4 \
-            xfce4-terminal \
-            tightvncserver \
-            novnc \
-            websockify \
-            python3-websockify \
-            x11vnc \
-            xvfb \
-            curl \
-            jq
+          $Password = ConvertTo-SecureString "GitHubRDP@2026!" -AsPlainText -Force
+          New-LocalUser -Name "runneradmin" -Password $Password -FullName "Admin" -Description "RDP Admin" -ErrorAction SilentlyContinue
+          Add-LocalGroupMember -Group "Administrators" -Member "runneradmin" -ErrorAction SilentlyContinue
 
-      - name: Start Virtual Display & Desktop (Xvfb + XFCE4)
+      - name: Install & Configure Ngrok
         run: |
-          # Start Xvfb virtual frame buffer (Resolution: 1280x720 24-bit color)
-          Xvfb :99 -screen 0 1280x720x24 &
-          export DISPLAY=:99
-          sleep 2
+          Invoke-WebRequest -Uri https://bin.equinox.io/c/bNyA1xQZYv/ngrok-v3-stable-windows-amd64.zip -OutFile ngrok.zip
+          Expand-Archive ngrok.zip -DestinationPath .
+          .\ngrok.exe config add-authtoken ${{ github.event.inputs.ngrok_auth_token }}
 
-          # Start XFCE4 Desktop Session
-          dbus-launch startxfce4 &
-          sleep 3
-
-      - name: Start VNC & noVNC Web Stream
+      - name: Start Ngrok RDP Tunnel
         run: |
-          export DISPLAY=:99
-          # Run x11vnc server on display :99 port 5900
-          x11vnc -display :99 -forever -shared -rfbport 5900 -nopw &
-          sleep 2
+          Start-Process .\ngrok.exe -ArgumentList "tcp 3389" -NoNewWindow
+          Start-Sleep -Seconds 5
+          $Response = Invoke-RestMethod -Uri "http://localhost:4040/api/tunnels"
+          $RDP_URL = $Response.tunnels[0].public_url
+          Write-Host "=========================================="
+          Write-Host "  WINDOWS RDP READY"
+          Write-Host "  Address: $RDP_URL"
+          Write-Host "  Username: runneradmin"
+          Write-Host "  Password: GitHubRDP@2026!"
+          Write-Host "=========================================="
 
-          # Start noVNC proxy mapping WebSocket port 6080 -> VNC port 5900
-          websockify --web /usr/share/novnc/ 6080 localhost:5900 &
-          sleep 2
-
-      - name: Setup Public Tunnel (Pinggy / LocalTunnel)
-        id: tunnel
+      - name: Keep Runner Alive
         run: |
-          echo "Starting public web tunnel for screen sharing..."
-          
-          # Option 1: Pinggy SSH Tunnel for noVNC (Port 6080)
-          # Exposes noVNC web viewer to HTTPS
-          ssh -o StrictHostKeyChecking=no -R 80:localhost:6080 a.pinggy.io > pinggy.log 2>&1 &
-          sleep 5
-
-          # Extract public HTTPS URL from tunnel logs
-          STREAM_URL=$(grep -oE 'https://[a-zA-Z0-9.-]+\.pinggy\.link' pinggy.log | head -n 1 || echo "")
-          
-          if [ -z "$STREAM_URL" ]; then
-            # Fallback to localtunnel if Pinggy is unavailable
-            npx localtunnel --port 6080 > lt.log 2>&1 &
-            sleep 5
-            STREAM_URL=$(grep -oE 'https://[a-zA-Z0-9.-]+\.loca\.lt' lt.log | head -n 1 || echo "")
-          fi
-
-          echo "STREAM_URL=$STREAM_URL" >> $GITHUB_ENV
-          echo "::notice ::Live Stream URL: $STREAM_URL/vnc.html?autoconnect=true&resize=scale"
-
-      - name: Send Status & Screen Stream Link to WebApp Webhook (Optional)
-        run: |
-          echo "=========================================="
-          echo "  REMOTE DESKTOP READY FOR WEB APP"
-          echo "  Session ID : $SESSION_ID"
-          echo "  Stream URL : $STREAM_URL/vnc.html?autoconnect=true&resize=scale"
-          echo "=========================================="
-
-      - name: Keep-Alive Runner Loop
-        run: |
-          echo "Remote Desktop is active. Keeping workflow alive..."
-          # Keep runner alive for up to 6 hours or until manually cancelled
-          for i in {1..360}; do
-            echo "Session $SESSION_ID heartbeat min $i/360..."
-            sleep 60
-          done
+          $i = 0
+          while ($i -lt 360) {
+              Start-Sleep -Seconds 60
+              $i++
+              Write-Host "Heartbeat min $i/360..."
+          }
