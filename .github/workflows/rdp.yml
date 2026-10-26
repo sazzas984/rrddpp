@@ -1,11 +1,7 @@
-name: Windows RDP Runner (Chrome & Firefox)
+name: Windows RDP Runner (Chrome & Firefox - Free Pinggy)
 
 on:
   workflow_dispatch:
-    inputs:
-      ngrok_auth_token:
-        description: 'Ngrok Auth Token (from ngrok.com)'
-        required: true
 
 jobs:
   windows-rdp:
@@ -38,33 +34,36 @@ jobs:
           winget install --id Mozilla.Firefox -e --silent --accept-package-agreements --accept-source-agreements
           exit 0
 
-      - name: Install & Configure Ngrok Tunnel
+      - name: Setup SSH Key
         shell: pwsh
         run: |
-          Write-Host "Installing Ngrok via Microsoft Store WinGet..."
-          winget install ngrok -s msstore --accept-source-agreements --accept-package-agreements --silent
-          
-          # Refresh environment path so the ngrok command works immediately
-          $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-          
-          Write-Host "Configuring Ngrok Auth Token..."
-          ngrok config add-authtoken ${{ github.event.inputs.ngrok_auth_token }}
+          if (!(Test-Path "$HOME\.ssh\id_rsa")) {
+              ssh-keygen -t rsa -b 2048 -N '""' -f "$HOME\.ssh\id_rsa"
+          }
 
-      - name: Start Ngrok TCP Tunnel for RDP (Port 3389)
+      - name: Start Free Pinggy TCP Tunnel (Port 3389)
         shell: pwsh
         run: |
-          Start-Process ngrok -ArgumentList "tcp 3389" -NoNewWindow
-          Start-Sleep -Seconds 6
-          $Response = Invoke-RestMethod -Uri "http://localhost:4040/api/tunnels"
-          $RDP_URL = $Response.tunnels[0].public_url
+          Write-Host "Starting free Pinggy TCP tunnel..."
+          Start-Process ssh -ArgumentList "-p 443 -o StrictHostKeyChecking=no -R0:127.0.0.1:3389 tcp@free.pinggy.io" -RedirectStandardOutput "pinggy.log" -RedirectStandardError "pinggy_err.log" -NoNewWindow
+          
+          Start-Sleep -Seconds 8
+          
+          if (Test-Path "pinggy.log") {
+              $logContent = Get-Content "pinggy.log" -Raw
+              Write-Host "=================================================="
+              Write-Host " PINGGY TUNNEL OUTPUT (LOOK FOR YOUR ADDRESS BELOW):"
+              Write-Host $logContent
+              Write-Host "=================================================="
+          }
           
           Write-Host "=================================================="
           Write-Host " WINDOWS RDP DESKTOP READY!"
-          Write-Host " Address  : $RDP_URL"
           Write-Host " Username : runneradmin"
           Write-Host " Password : GitHubRDP@2026!"
+          Write-Host " Copy your public TCP endpoint from the logs above"
+          Write-Host " (e.g., a.pinggy.link:XXXXX) and paste it into mstsc!"
           Write-Host "=================================================="
-          echo "::notice ::RDP Endpoint: $RDP_URL"
 
       - name: Keep Runner Alive
         shell: pwsh
