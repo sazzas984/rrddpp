@@ -29,12 +29,18 @@ jobs:
           Add-LocalGroupMember -Group "Administrators" -Member "runneradmin" -ErrorAction SilentlyContinue
 
       - name: Install Google Chrome & Mozilla Firefox
+        shell: pwsh
         run: |
-          Write-Host "Installing Google Chrome..."
+          $ErrorActionPreference = 'SilentlyContinue'
+          
+          Write-Host "Checking/Installing Google Chrome..."
           winget install --id Google.Chrome -e --silent --accept-package-agreements --accept-source-agreements
           
-          Write-Host "Installing Mozilla Firefox..."
+          Write-Host "Checking/Installing Mozilla Firefox..."
           winget install --id Mozilla.Firefox -e --silent --accept-package-agreements --accept-source-agreements
+          
+          # Ensure step always exits successfully even if packages are already present
+          exit 0
 
       - name: Install & Configure Ngrok Tunnel
         run: |
