@@ -24,15 +24,23 @@ jobs:
         shell: pwsh
         run: |
           $Username = "RDPUser"
-          $Password = "GitHubRDP2026!"
+          $Password = "Amit2233"
           
+          # Delete user if left over from a previous run
           cmd /c "net user $Username /delete" 2>$null
           
-          net user $Username $Password /add
+          # Create user and assign password
+          net user $Username $Password /add /active:yes
+          if ($LASTEXITCODE -ne 0) {
+              Write-Error "Failed to create RDP user."
+              exit 1
+          }
+          
+          # Add to admin and RDP groups
           net localgroup Administrators $Username /add
           net localgroup "Remote Desktop Users" $Username /add
           
-          Write-Host "User $Username successfully created and configured!"
+          Write-Host "User $Username successfully created and password applied!"
 
       - name: Install Google Chrome & Mozilla Firefox
         shell: pwsh
@@ -74,7 +82,7 @@ jobs:
           Write-Host "=================================================="
           Write-Host " WINDOWS RDP DESKTOP READY!"
           Write-Host " Username : .\RDPUser"
-          Write-Host " Password : GitHubRDP2026!"
+          Write-Host " Password : Amit2233"
           Write-Host "=================================================="
 
       - name: Keep Runner Alive
