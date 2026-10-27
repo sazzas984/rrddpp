@@ -24,12 +24,10 @@ jobs:
         shell: pwsh
         run: |
           $Username = "RDPUser"
-          $Password = "GitHubRDP@2026!"
+          $Password = "GitHubRDP2026!"
           
-          # Delete user safely if it already exists from a previous run
-          net user $Username /delete 2>$null
+          cmd /c "net user $Username /delete" 2>$null
           
-          # Create user using net user to bypass PowerShell policy exceptions
           net user $Username $Password /add
           net localgroup Administrators $Username /add
           net localgroup "Remote Desktop Users" $Username /add
@@ -76,7 +74,7 @@ jobs:
           Write-Host "=================================================="
           Write-Host " WINDOWS RDP DESKTOP READY!"
           Write-Host " Username : .\RDPUser"
-          Write-Host " Password : GitHubRDP@2026!"
+          Write-Host " Password : GitHubRDP2026!"
           Write-Host "=================================================="
 
       - name: Keep Runner Alive
