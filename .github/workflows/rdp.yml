@@ -20,24 +20,19 @@ jobs:
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 0 -Force
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
 
-      - name: Create Clean RDP User (PowerShell Native)
+      - name: Create Clean RDP User
         shell: pwsh
         run: |
           $Username = "RDPUser"
           $Password = "GitHubRDP@2026!"
           
-          # Remove user safely if it already exists
-          if (Get-LocalUser -Name $Username -ErrorAction SilentlyContinue) {
-              Remove-LocalUser -Name $Username
-          }
+          # Delete user safely if it already exists from a previous run
+          net user $Username /delete 2>$null
           
-          # Create user using native PowerShell cmdlets
-          $SecurePassword = ConvertTo-SecureString $Password -AsPlainText -Force
-          New-LocalUser -Name $Username -Password $SecurePassword -FullName "RDP User" -Description "Cloud RDP User" -PasswordNeverExpires
-          
-          # Add to Administrators and Remote Desktop Users groups
-          Add-LocalGroupMember -Group "Administrators" -Member $Username
-          Add-LocalGroupMember -Group "Remote Desktop Users" -Member $Username
+          # Create user using net user to bypass PowerShell policy exceptions
+          net user $Username $Password /add
+          net localgroup Administrators $Username /add
+          net localgroup "Remote Desktop Users" $Username /add
           
           Write-Host "User $Username successfully created and configured!"
 
