@@ -13,16 +13,33 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Enable Remote Desktop (RDP)
+        shell: pwsh
         run: |
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
-          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 0 -Force
 
-      - name: Set RDP Administrator Credentials
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          Restart-Service -Name TermService -Force
+
+      - name: Create Clean RDP User
+        shell: pwsh
         run: |
-          $Password = ConvertTo-SecureString "GitHubRDP@2026!" -AsPlainText -Force
-          New-LocalUser -Name "runneradmin" -Password $Password -FullName "Admin" -Description "RDP Admin" -ErrorAction SilentlyContinue
-          Add-LocalGroupMember -Group "Administrators" -Member "runneradmin" -ErrorAction SilentlyContinue
+          $Username = "RDPUser"
+          $Password = "GitHubRDP@2026!"
+          
+          # Delete user if it already exists to avoid collisions
+          net user $Username /delete 2>$null
+          
+          # Create fresh local user
+          net user $Username$Password /add /expires:never
+          net localgroup Administrators $Username /add
+          net localgroup "Remote Desktop Users" $Username /add
+          
+          # Force password to never expire
+          WMIC USERACCOUNT WHERE "Name='$Username'" SET PasswordExpires=FALSE
+          
+          Write-Host "User $Username successfully configured!"
 
       - name: Install Google Chrome & Mozilla Firefox
         shell: pwsh
@@ -39,23 +56,16 @@ jobs:
         run: |
           Write-Host "Starting Serveo TCP tunnel on port 443..."
           
-          $psi = [System.Diagnostics.ProcessStartInfo]::new()
-          $psi.FileName = "ssh"
+          $psi = [System.Diagnostics.ProcessStartInfo]::new()$psi.FileName = "ssh"
           $psi.Arguments = "-p 443 -o StrictHostKeyChecking=no -R 0:localhost:3389 serveo.net"
-          $psi.RedirectStandardOutput = $true
-          $psi.RedirectStandardError = $true
-          $psi.UseShellExecute = $false
-          
-          $p = [System.Diagnostics.Process]::Start($psi)
-          
-          $sw = [Diagnostics.Stopwatch]::StartNew()
+          $psi.RedirectStandardOutput = $true$psi.RedirectStandardError = $true$psi.UseShellExecute = $false$p = [System.Diagnostics.Process]::Start($psi)$sw = [Diagnostics.Stopwatch]::StartNew()
           while ($sw.ElapsedMilliseconds -lt 8000) {
               if (!$p.StandardError.EndOfStream) {
-                  $line = $p.StandardError.ReadLine()
+                  $line =$p.StandardError.ReadLine()
                   Write-Host "TUNNEL OUTPUT: $line"
               }
               if (!$p.StandardOutput.EndOfStream) {
-                  $line = $p.StandardOutput.ReadLine()
+                  $line =$p.StandardOutput.ReadLine()
                   Write-Host "TUNNEL OUTPUT: $line"
               }
               Start-Sleep -Milliseconds 100
@@ -63,9 +73,8 @@ jobs:
           
           Write-Host "=================================================="
           Write-Host " WINDOWS RDP DESKTOP READY!"
-          Write-Host " Username : runneradmin"
+          Write-Host " Username : .\RDPUser"
           Write-Host " Password : GitHubRDP@2026!"
-          Write-Host " Look above for: Forwarding TCP connections from serveo.net:XXXXX"
           Write-Host "=================================================="
 
       - name: Keep Runner Alive
