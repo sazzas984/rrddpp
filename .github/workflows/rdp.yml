@@ -1,10 +1,10 @@
-name: Windows RDP Runner (Chrome & Firefox - Pinggy)
+name: RDP
 
 on:
   workflow_dispatch:
 
 jobs:
-  windows-rdp:
+  secure-rdp:
     runs-on: windows-latest
     timeout-minutes: 360
 
@@ -28,38 +28,45 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'SilentlyContinue'
-          Write-Host "Checking/Installing Google Chrome..."
+          Write-Host "Installing Google Chrome..."
           winget install --id Google.Chrome -e --silent --accept-package-agreements --accept-source-agreements
-          Write-Host "Checking/Installing Mozilla Firefox..."
+          Write-Host "Installing Mozilla Firefox..."
           winget install --id Mozilla.Firefox -e --silent --accept-package-agreements --accept-source-agreements
           exit 0
 
-      - name: Setup SSH Key
+      - name: Start Free Serveo TCP Tunnel (Port 3389)
         shell: pwsh
         run: |
-          $sshDir = "$HOME\.ssh"
-          if (!(Test-Path $sshDir)) {
-              New-Item -ItemType Directory -Force -Path $sshDir | Out-Null
-          }
-          if (!(Test-Path "$sshDir\id_rsa")) {
-              ssh-keygen -t rsa -b 2048 -N '""' -f "$sshDir\id_rsa"
-          }
-
-      - name: Start Free Pinggy TCP Tunnel (Port 3389)
-        shell: pwsh
-        run: |
-          Write-Host "Starting free Pinggy TCP tunnel..."
-          Start-Process ssh -ArgumentList "-p 443 -o StrictHostKeyChecking=no -R0:127.0.0.1:3389 tcp@free.pinggy.io" -RedirectStandardOutput "pinggy.log" -RedirectStandardError "pinggy_err.log" -NoNewWindow
+          Write-Host "Starting Serveo TCP tunnel on port 443..."
           
-          Start-Sleep -Seconds 8
+          $psi = [System.Diagnostics.ProcessStartInfo]::new()
+          $psi.FileName = "ssh"
+          $psi.Arguments = "-p 443 -o StrictHostKeyChecking=no -R 0:localhost:3389 serveo.net"
+          $psi.RedirectStandardOutput = $true
+          $psi.RedirectStandardError = $true
+          $psi.UseShellExecute = $false
           
-          if (Test-Path "pinggy.log") {
-              $logContent = Get-Content "pinggy.log" -Raw
-              Write-Host "=================================================="
-              Write-Host " PINGGY TUNNEL OUTPUT:"
-              Write-Host $logContent
-              Write-Host "=================================================="
+          $p = [System.Diagnostics.Process]::Start($psi)
+          
+          $sw = [Diagnostics.Stopwatch]::StartNew()
+          while ($sw.ElapsedMilliseconds -lt 8000) {
+              if (!$p.StandardError.EndOfStream) {
+                  $line = $p.StandardError.ReadLine()
+                  Write-Host "TUNNEL OUTPUT: $line"
+              }
+              if (!$p.StandardOutput.EndOfStream) {
+                  $line = $p.StandardOutput.ReadLine()
+                  Write-Host "TUNNEL OUTPUT: $line"
+              }
+              Start-Sleep -Milliseconds 100
           }
+          
+          Write-Host "=================================================="
+          Write-Host " WINDOWS RDP DESKTOP READY!"
+          Write-Host " Username : runneradmin"
+          Write-Host " Password : GitHubRDP@2026!"
+          Write-Host " Look above for: Forwarding TCP connections from serveo.net:XXXXX"
+          Write-Host "=================================================="
 
       - name: Keep Runner Alive
         shell: pwsh
