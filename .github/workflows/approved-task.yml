@@ -1,0 +1,29 @@
+name: Authorized Test Account Audit Marker
+
+on:
+  workflow_dispatch:
+    inputs:
+      report_id:
+        description: 'Status-only report ID from the PHP dashboard (no credentials)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  audit-marker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate report reference
+        env:
+          REPORT_ID: ${{ inputs.report_id }}
+        run: |
+          if [[ ! "$REPORT_ID" =~ ^[a-f0-9]{32}$ ]]; then
+            echo "Invalid report ID format"
+            exit 1
+          fi
+          echo "Authorized audit report reference accepted."
+          echo "Report ID: $REPORT_ID"
+          echo "No passwords or credential material are provided to this workflow."
